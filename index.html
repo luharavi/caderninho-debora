@@ -987,6 +987,12 @@
       + '<input id="arq-backup" type="file" accept="application/json,.json" style="display:none"></div>'
       + '<p class="dica">Restaurar <strong>substitui</strong> tudo que está no aparelho pelo conteúdo do arquivo.</p></div>'
 
+      + '<div class="rot"><h2>Começar do zero</h2><div class="fio"></div></div>'
+      + '<div class="painel"><p class="sub">Apaga <strong>tudo</strong> deste aparelho — clientes, atendimentos, pacotes, tipos e valores — e o caderninho reabre como na primeira vez. '
+      + 'Serve pra limpar os exemplos de uma vez e entrar com os dados de verdade.</p>'
+      + '<p class="dica" style="margin-bottom:14px">Não tem desfazer. Se tiver algo que importa, salve o backup antes.</p>'
+      + '<div class="pe"><button class="btn lg" data-act="zerar" style="color:var(--laranja-forte)">Apagar tudo e recomeçar</button></div></div>'
+
       + '<div class="rot"><h2>Dados de exemplo</h2><div class="fio"></div></div>'
       + '<div class="painel"><div class="pe"><button class="btn" data-act="exemplo">Carregar exemplos</button>'
       + '<button class="btn" data-act="limparEx">Apagar exemplos</button></div>'
@@ -1461,6 +1467,13 @@
     if(act==='limparEx'){ dobra(t,'Confirmar?',limparEx); return; }
     if(act==='backup'){ exportaBackup(); return; }
     if(act==='planilha'){ exportaPlanilha(); return; }
+    if(act==='zerar'){
+      dobra(t,'Apagar tudo mesmo?',()=>{
+        try{ localStorage.removeItem(CHAVE); }catch(e){}
+        location.reload();   /* recarregar faz o app passar pelo primeiro boot outra vez */
+      });
+      return;
+    }
     if(act==='novoTipo'){ gTipo(null); return; }
     if(act==='editTipo'){ const tp=tipo(t.dataset.id); if(tp && !tp.sumiu) gTipo(tp); return; }
     if(act==='salvarTipo'){ await salvarTipo(t.dataset.id||''); return; }
