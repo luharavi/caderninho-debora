@@ -312,7 +312,9 @@
     text-transform:none;color:var(--tinta);font-weight:400;margin:0;
   }
   .escolha label:has(input:checked){border-color:var(--laranja);background:var(--laranja-claro)}
-  .escolha input{margin-top:3px;accent-color:var(--laranja-forte)}
+  /* sem flex:none o texto longo espreme a bolinha e tudo sai do lugar */
+  .escolha input{margin:3px 0 0;accent-color:var(--laranja-forte);flex:none;width:17px;height:17px}
+  .escolha label>span{flex:1;min-width:0}
   .escolha b{display:block;font-weight:700;font-size:14.5px}
   .escolha small{color:var(--tinta-2);font-size:12.5px;line-height:1.4;display:block}
   .marcar{display:flex;gap:11px;align-items:center;font-size:14px;padding:6px 0}
@@ -398,17 +400,19 @@
     mao:   { label:'Só mão',   curto:'Mão',      min:40 },
     pemao: { label:'Pé e mão', curto:'Pé e mão', min:70 }
   };
-  const PKG = {
-    none:      { label:'Pontual',   curto:'Pontual',    desc:'marca quando precisar' },
-    semanal15: { label:'Pacote 15', curto:'Pacote 15',  desc:'mão toda semana, pé junto a cada 15 dias', pes:[0,2] },
-    semanal30: { label:'Pacote 30', curto:'Pacote 30',  desc:'mão toda semana, pé junto a cada 30 dias', pes:[0] }
-  };
-  const SESSOES = 4;                       /* um ciclo = 4 semanas */
+  /* Tipos de pacote: ela cria e edita os dela em Ajustes.
+     Estes dois são só o ponto de partida na primeira abertura. */
+  const PONTUAL = { id:'none', nome:'Pontual', desc:'marca quando precisar' };
+  const PKG_INICIAIS = [
+    { id:'semanal15', nome:'Pacote 15', sessoes:4, pes:[0,2], valor:260, ordem:1 },
+    { id:'semanal30', nome:'Pacote 30', sessoes:4, pes:[0],   valor:230, ordem:2 }
+  ];
+  const SESSOES_PADRAO = 4;
   const WD  = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
   const WDC = ['dom','seg','ter','qua','qui','sex','sáb'];
   const MES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   const MESC= ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  const PADRAO = { precoMao:60, precoPeMao:90, precoPkg15:260, precoPkg30:230, pix:'' };
+  const PADRAO = { precoMao:60, precoPeMao:90, pix:'', pacotesIniciados:false };
 
   /* ================= datas ================= */
   const pad = n => String(n).padStart(2,'0');
@@ -444,11 +448,29 @@
 
   /* ================= estado ================= */
   const st = { view:'hoje', modo:'semana', semana:ymd(segundaDe(new Date())), mes:primeiroDoMes(new Date()),
-    clientes:[], atend:[], ciclos:[], cfg:Object.assign({},PADRAO), db:null, pronto:false, edita:true };
+    clientes:[], atend:[], ciclos:[], pacotes:[], cfg:Object.assign({},PADRAO), db:null, pronto:false, edita:true };
   const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const cli = id => st.clientes.find(c=>c.id===id) || null;
   const nomeCurto = n => String(n||'').trim().split(/\s+/)[0] || '';
-  const precoPkg = p => p==='semanal15' ? st.cfg.precoPkg15 : st.cfg.precoPkg30;
+  /* ---- catálogo de pacotes ---- */
+  const tipos = () => [...st.pacotes].sort((a,b)=>(Number(a.ordem)||0)-(Number(b.ordem)||0)
+    || String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
+  function tipo(id){
+    if(!id || id==='none') return null;
+    return st.pacotes.find(p=>p.id===id)
+      || { id:id, nome:'Pacote removido', sessoes:SESSOES_PADRAO, pes:[0], valor:0, sumiu:true };
+  }
+  const nomePkg = id => { const t=tipo(id); return t? t.nome : PONTUAL.nome; };
+  const sessoesDe = t => Math.max(1, Math.min(24, Number(t&&t.sessoes)||SESSOES_PADRAO));
+  const pesDe = t => Array.isArray(t&&t.pes) ? t.pes : [];
+  const precoPkg = id => { const t=tipo(id); return t? (Number(t.valor)||0) : 0; };
+  const ord = n => n+'º';
+  function descTipo(t){
+    const n=sessoesDe(t), p=pesDe(t).filter(i=>i<n).sort((a,b)=>a-b);
+    return n+' atendimentos semanais · '
+      + (p.length? 'pé no '+p.map(i=>ord(i+1)).join(' e no ') : 'só mão')
+      + ' · '+grana(t.valor)+' o ciclo';
+  }
   const precoPontual = s => s==='pemao' ? st.cfg.precoPeMao : st.cfg.precoMao;
   const ehFalta = a => a.status==='falta';
   const naCadeira = arr => arr.filter(a=>!ehFalta(a)).reduce((s,a)=>s+(SERV[a.serv]||SERV.mao).min,0);
@@ -818,7 +840,7 @@
       const devendo = pkg ? cs.some(x=>infoCiclo(x).status==='receber')
                           : meus.some(a=>!a.pago&&a.data<=hoje());
       h+='<div class="cli"><div class="n"><h3>'+esc(c.nome)+'</h3>'
-        + (pkg?'<span class="selo pkg">'+PKG[c.pacote].curto+'</span>':'')
+        + (pkg?'<span class="selo pkg">'+nomePkg(c.pacote)+'</span>':'')
         + (devendo?'<span class="selo aberto">a receber</span>':'')
         + (c.exemplo?'<span class="selo ex">exemplo</span>':'')
         + '</div>'
@@ -871,7 +893,7 @@
 
   function cartaoCiclo(c){
     const i=infoCiclo(c);
-    const pes=(PKG[c.pacote]&&PKG[c.pacote].pes)||[];
+    const pes=pesDe(tipo(c.pacote));
     let barra='';
     for(let k=0;k<Math.max(i.total,1);k++){
       const a=i.as[k];
@@ -898,7 +920,7 @@
     if(ultimo && i.status!=='andamento') acoes+='<button class="btn cta so-edita" data-act="gerar" data-cli="'+c.clientId+'">Gerar próximo ciclo</button>';
     acoes+='<button class="btn fraco so-edita" data-act="editCiclo" data-id="'+c.id+'">editar</button>';
     return '<div class="ciclo"><div class="n"><h3>'+esc(c.clientName)+'</h3>'+selo+'<span class="v num">'+grana(c.valor)+'</span></div>'
-      + '<p class="l">Pacote nº '+esc(c.num)+' · '+(PKG[c.pacote]?PKG[c.pacote].label:'pacote')+' · '+i.feitas+' de '+i.total+' feitos</p>'
+      + '<p class="l">Pacote nº '+esc(c.num)+' · '+nomePkg(c.pacote)+' · '+i.feitas+' de '+i.total+' feitos</p>'
       + '<div class="barra">'+barra+'</div>'
       + '<p class="datas">'+i.as.map(a=>{
           const t=ddmm(a.data)+(a.serv==='pemao'?'+pé':'');
@@ -915,20 +937,33 @@
       + '<div class="painel">'
       + '<p class="sub" style="margin-bottom:14px">Entram automaticamente quando você marca um horário ou gera um ciclo. Dá para mudar caso a caso.</p>'
       + '<div class="duas">'+cmp('precoMao','Só mão (pontual)',c.precoMao)+cmp('precoPeMao','Pé e mão (pontual)',c.precoPeMao)+'</div>'
-      + '<div class="duas">'+cmp('precoPkg15','Pacote 15 (ciclo de 4)',c.precoPkg15)+cmp('precoPkg30','Pacote 30 (ciclo de 4)',c.precoPkg30)+'</div>'
       + '<div class="campo"><label for="cfg-pix">Chave Pix</label><input id="cfg-pix" type="text" value="'+esc(c.pix)+'" placeholder="telefone, e-mail ou chave aleatória"></div>'
       + '<p class="dica">A chave entra sozinha nas mensagens de cobrança.</p>'
       + '<div class="pe"><button class="btn cta lg so-edita" data-act="salvarCfg">Salvar valores</button></div></div>'
 
+      + '<div class="rot"><h2>Tipos de pacote</h2><div class="fio"></div><button class="btn cta" data-act="novoTipo">+ Novo tipo</button></div>'
+      + (tipos().length
+          ? tipos().map(t=>{
+              const quantas=st.clientes.filter(x=>x.pacote===t.id).length;
+              return '<div class="cli"><div class="n"><h3>'+esc(t.nome)+'</h3>'
+                + (quantas? '<span class="selo pkg">'+quantas+(quantas>1?' clientes':' cliente')+'</span>'
+                          : '<span class="selo ex">sem clientes</span>')
+                + '<span class="num" style="margin-left:auto;font-weight:800;font-size:17px">'+grana(t.valor)+'</span></div>'
+                + '<p class="l">'+esc(descTipo(t))+'</p>'
+                + '<div class="acoes"><button class="btn" data-act="editTipo" data-id="'+esc(t.id)+'">Editar</button></div></div>';
+            }).join('')
+          : '<div class="painel mudo">Nenhum tipo de pacote cadastrado. Crie o primeiro no botão acima.</div>')
+
       + '<div class="rot"><h2>Como o pacote funciona</h2><div class="fio"></div></div>'
-      + '<div class="painel"><p class="sub">Um ciclo são <strong>4 atendimentos semanais</strong> no dia e hora fixos da cliente. No <strong>Pacote 15</strong> o pé entra no 1º e no 3º; no <strong>Pacote 30</strong>, só no 1º. '
-      + 'O pagamento é do ciclo inteiro: quando o 4º atendimento acontece, o pacote “vira” e aparece em <strong>Avisos</strong> e em <strong>Pagamentos</strong> como <em>a receber</em>, com a mensagem de cobrança pronta. '
+      + '<div class="painel"><p class="sub">Cada tipo de pacote define <strong>quantos atendimentos semanais</strong> fecham um ciclo, <strong>em quais deles o pé entra junto</strong> e <strong>quanto custa o ciclo</strong>. '
+      + 'A cliente é ligada a um tipo no cadastro dela, e o botão “Gerar ciclo” cria os horários no dia e hora fixos.</p>'
+      + '<p class="sub" style="margin-top:10px">O pagamento é do ciclo inteiro: quando o último atendimento acontece, o pacote “vira” e aparece em <strong>Avisos</strong> e em <strong>Pagamentos</strong> como <em>a receber</em>, com a mensagem de cobrança pronta. '
       + 'Uma semana antes de fechar, o caderninho já avisa. Se remarcar um horário, a data de fechamento acompanha sozinha.</p></div>'
 
       + '<div class="rot"><h2>Quando a cliente cancela</h2><div class="fio"></div></div>'
       + '<div class="painel"><p class="sub">No horário, toque em <strong>cancelou</strong> e escolha: '
       + '<strong>avisou antes</strong> — você escolhe o novo dia e hora, nada é cobrado e o horário muda de lugar (fica a marca “remanejado de…”); '
-      + 'ou <strong>cancelou em cima da hora</strong> — o horário vira <em>falta cobrada</em>: continua cobrado e, no pacote, consome um dos 4 atendimentos, '
+      + 'ou <strong>cancelou em cima da hora</strong> — o horário vira <em>falta cobrada</em>: continua cobrado e, no pacote, consome um dos atendimentos do ciclo, '
       + 'então o ciclo fecha na data prevista. A falta não entra no tempo de cadeira nem na conta de atendimentos feitos, e aparece riscada na agenda e no calendário. '
       + 'Em qualquer um dos dois casos o caderninho já abre a mensagem pronta pra avisar a cliente.</p></div>'
 
@@ -976,7 +1011,7 @@
     h+='<p class="intro">'+(doCiclo? 'Este horário faz parte de um pacote — o pagamento fica no ciclo, em Pagamentos.' : 'Atendimento avulso, pago por atendimento.')+'</p>';
     h+='<div class="campo"><label for="f-cli">Cliente</label><select id="f-cli"'+(doCiclo?' disabled':'')+'>'
       + '<option value="">— escolha —</option>'
-      + ord.map(c=>'<option value="'+c.id+'"'+(c.id===a.clientId?' selected':'')+'>'+esc(c.nome)+(c.pacote&&c.pacote!=='none'?' · '+PKG[c.pacote].curto:'')+'</option>').join('')
+      + ord.map(c=>'<option value="'+c.id+'"'+(c.id===a.clientId?' selected':'')+'>'+esc(c.nome)+(c.pacote&&c.pacote!=='none'?' · '+nomePkg(c.pacote):'')+'</option>').join('')
       + '</select>'+(ord.length?'':'<p class="dica">Nenhuma cliente cadastrada — cadastre em Clientes.</p>')+'</div>';
     h+='<div class="duas"><div class="campo"><label for="f-data">Data</label><input id="f-data" type="date" value="'+esc(a.data)+'"></div>'
       + '<div class="campo"><label for="f-hora">Hora</label><input id="f-hora" type="time" value="'+esc(a.hora)+'"></div></div>';
@@ -1038,8 +1073,12 @@
     let h='<h2 id="gTitulo">'+(novo?'Nova cliente':'Editar cliente')+'</h2>';
     h+='<div class="campo"><label for="c-nome">Nome</label><input id="c-nome" type="text" value="'+esc(c.nome)+'" placeholder="Nome e sobrenome"></div>';
     h+='<div class="campo"><label for="c-fone">WhatsApp</label><input id="c-fone" type="tel" inputmode="tel" value="'+esc(c.fone)+'" placeholder="(11) 91234-5678"></div>';
+    /* se o tipo dela foi apagado, cai em Pontual em vez de ficar sem nada marcado */
+    const atualPkg = (c.pacote===PONTUAL.id || st.pacotes.some(p=>p.id===c.pacote)) ? c.pacote : PONTUAL.id;
     h+='<div class="campo"><span class="rotulo">Formato</span><div class="escolha">'
-      + ['none','semanal15','semanal30'].map(k=>'<label><input type="radio" name="c-pkg" value="'+k+'"'+(c.pacote===k?' checked':'')+'><span><b>'+PKG[k].label+'</b><small>'+PKG[k].desc+'</small></span></label>').join('')
+      + [PONTUAL].concat(tipos()).map(k=>'<label><input type="radio" name="c-pkg" value="'+esc(k.id)+'"'+(atualPkg===k.id?' checked':'')+'>'
+          + '<span><b>'+esc(k.nome)+'</b><small>'+esc(k.id==='none'? k.desc : descTipo(k))+'</small></span></label>').join('')
+      + (tipos().length? '' : '<p class="dica">Nenhum tipo de pacote cadastrado — crie um em Ajustes.</p>')
       + '</div></div>';
     h+='<div id="c-fixo"><div class="duas">'
       + '<div class="campo"><label for="c-dia">Dia fixo</label><select id="c-dia">'+WD.map((d,i)=>'<option value="'+i+'"'+(String(i)===String(c.dia)?' selected':'')+'>'+d+'</option>').join('')+'</select></div>'
@@ -1051,14 +1090,15 @@
       + '<button class="btn cta lg" data-act="salvarCli" data-cli="'+(c.id||'')+'">Salvar</button></div>';
     abre(h);
     const fx=gc.querySelector('#c-fixo');
-    const sinc=()=>{ fx.hidden=gc.querySelector('input[name="c-pkg"]:checked').value==='none'; };
+    const sinc=()=>{ const s=gc.querySelector('input[name="c-pkg"]:checked'); fx.hidden=!s || s.value==='none'; };
     gc.querySelectorAll('input[name="c-pkg"]').forEach(r=>r.addEventListener('change',sinc));
     sinc();
   }
   async function salvarCli(id){
     const nome=gc.querySelector('#c-nome').value.trim();
     if(!nome){ nota('Escreva o nome da cliente.'); return; }
-    const pacote=gc.querySelector('input[name="c-pkg"]:checked').value;
+    const selPkg=gc.querySelector('input[name="c-pkg"]:checked');
+    const pacote=selPkg? selPkg.value : 'none';
     const doc={ nome:nome, fone:gc.querySelector('#c-fone').value.trim(), pacote:pacote,
       dia:Number(gc.querySelector('#c-dia').value)||0, hora:gc.querySelector('#c-hora').value||'09:00',
       obs:gc.querySelector('#c-obs').value.trim() };
@@ -1085,12 +1125,13 @@
     const alvo=Number(c.dia)||0;
     let d=parse(inicioYmd);
     while(d.getDay()!==alvo) d=addD(d,1);
-    const pes=(PKG[c.pacote]&&PKG[c.pacote].pes)||[0];
+    const t=tipo(c.pacote);
+    const pes=pesDe(t), n=sessoesDe(t);
     const out=[];
     for(let k=0;k<nCiclos;k++){
       const ses=[];
-      for(let i=0;i<SESSOES;i++){
-        ses.push({ data:ymd(addD(d,(k*SESSOES+i)*7)), serv: pes.indexOf(i)>=0 ? 'pemao' : 'mao' });
+      for(let i=0;i<n;i++){
+        ses.push({ data:ymd(addD(d,(k*n+i)*7)), serv: pes.indexOf(i)>=0 ? 'pemao' : 'mao' });
       }
       out.push(ses);
     }
@@ -1102,10 +1143,14 @@
     const iu=ult?infoCiclo(ult):null;
     const sugerido = iu&&iu.fim ? ymd(addD(parse(iu.fim),7)) : hoje();
     let h='<h2 id="gTitulo">Gerar ciclo — '+esc(nomeCurto(c.nome))+'</h2>';
-    h+='<p class="intro">'+PKG[c.pacote].label+' · '+WD[Number(c.dia)||0].toLowerCase()+' às '+esc(c.hora||'09:00')+' · 4 atendimentos por ciclo, '+grana(precoPkg(c.pacote))+' o ciclo.</p>';
+    const tp=tipo(c.pacote), nSes=sessoesDe(tp);
+    h+='<p class="intro">'+esc(nomePkg(c.pacote))+' · '+WD[Number(c.dia)||0].toLowerCase()+' às '+esc(c.hora||'09:00')+' · '+nSes+' atendimentos por ciclo, '+grana(precoPkg(c.pacote))+' o ciclo.</p>';
+    if(tp&&tp.sumiu) h+='<p class="dica" style="color:var(--laranja-forte);margin-bottom:12px">O tipo de pacote desta cliente foi apagado em Ajustes. Escolha outro no cadastro dela antes de gerar.</p>';
     if(iu&&iu.status!=='pago'&&iu.status==='andamento') h+='<p class="dica" style="color:var(--laranja-forte);margin-bottom:12px">O pacote nº '+esc(ult.num)+' ainda está rodando ('+iu.feitas+' de '+iu.total+'). Gerando outro, os dois ficam abertos.</p>';
     h+='<div class="duas"><div class="campo"><label for="g-ini">A partir de</label><input id="g-ini" type="date" value="'+sugerido+'"></div>'
-      + '<div class="campo"><label for="g-n">Quantos ciclos</label><select id="g-n"><option value="1" selected>1 ciclo (4 semanas)</option><option value="2">2 ciclos (8 semanas)</option><option value="3">3 ciclos (12 semanas)</option></select></div></div>';
+      + '<div class="campo"><label for="g-n">Quantos ciclos</label><select id="g-n">'
+      + [1,2,3].map(n=>'<option value="'+n+'"'+(n===1?' selected':'')+'>'+n+(n>1?' ciclos':' ciclo')+' ('+(n*nSes)+' semanas)</option>').join('')
+      + '</select></div></div>';
     h+='<div class="campo"><span class="rotulo">Vai criar</span><div class="previa" id="g-prev"></div></div>';
     h+='<div class="pe"><button class="btn lg" data-fechar>Cancelar</button><button class="btn cta lg" data-act="confGerar" data-cli="'+c.id+'">Criar horários</button></div>';
     abre(h);
@@ -1162,7 +1207,7 @@
   function gCiclo(c){
     const i=infoCiclo(c);
     let h='<h2 id="gTitulo">Pacote nº '+esc(c.num)+' — '+esc(nomeCurto(c.clientName))+'</h2>';
-    h+='<p class="intro">'+(PKG[c.pacote]?PKG[c.pacote].label:'pacote')+' · '+i.feitas+' de '+i.total+' atendimentos feitos'+(i.fim?' · fecha em '+ddmm(i.fim):'')+'.</p>';
+    h+='<p class="intro">'+nomePkg(c.pacote)+' · '+i.feitas+' de '+i.total+' atendimentos feitos'+(i.fim?' · fecha em '+ddmm(i.fim):'')+'.</p>';
     h+='<div class="campo"><label for="k-valor">Valor do ciclo (R$)</label><input id="k-valor" type="number" min="0" step="5" value="'+esc(c.valor)+'"></div>';
     h+='<label class="marcar"><input id="k-pago" type="checkbox"'+(c.pago?' checked':'')+'> Pacote já pago</label>';
     h+='<p class="dica">Os horários deste pacote são editados um a um na Agenda. Apagar o pacote não apaga os horários — eles voltam a ser avulsos.</p>';
@@ -1179,6 +1224,70 @@
       pago:pago, pagoEm: pago? (c.pagoEm||hoje()) : ''
     }));
     if(ok){ fecha(); nota('Pacote atualizado.'); }
+  }
+
+  /* ---- gaveta: tipo de pacote ---- */
+  function gTipo(t0){
+    const novo=!t0;
+    const t=t0||{nome:'',sessoes:4,pes:[0],valor:200};
+    const usos=novo?0:st.clientes.filter(x=>x.pacote===t.id).length;
+    let h='<h2 id="gTitulo">'+(novo?'Novo tipo de pacote':'Editar '+esc(t.nome))+'</h2>';
+    h+='<p class="intro">Um ciclo é a quantidade de atendimentos semanais que a cliente paga de uma vez.</p>';
+    h+='<div class="campo"><label for="t-nome">Nome</label><input id="t-nome" type="text" value="'+esc(t.nome)+'" placeholder="ex.: Pacote quinzenal"></div>';
+    h+='<div class="duas">'
+      + '<div class="campo"><label for="t-ses">Atendimentos por ciclo</label><input id="t-ses" type="number" min="1" max="24" step="1" value="'+esc(sessoesDe(t))+'"></div>'
+      + '<div class="campo"><label for="t-valor">Valor do ciclo (R$)</label><input id="t-valor" type="number" min="0" step="5" value="'+esc(Number(t.valor)||0)+'"></div>'
+      + '</div>';
+    h+='<div class="campo"><span class="rotulo">Em quais o pé entra junto</span><div id="t-pes" class="escolha"></div>'
+      + '<p class="dica">Os que ficarem desmarcados são só mão. Exemplo: pé a cada 15 dias num ciclo de 4 = marcar o 1º e o 3º.</p></div>';
+    if(usos) h+='<p class="dica">'+usos+(usos>1?' clientes usam':' cliente usa')+' este tipo. Mudar aqui vale para os <strong>próximos</strong> ciclos — os já gerados ficam como estão.</p>';
+    h+='<div class="pe"><button class="btn lg" data-fechar>Cancelar</button>'
+      + (novo?'':'<button class="btn lg" data-act="apagarTipo" data-id="'+esc(t.id)+'">Apagar</button>')
+      + '<button class="btn cta lg" data-act="salvarTipo" data-id="'+esc(novo?'':t.id)+'">Salvar</button></div>';
+    abre(h);
+
+    const caixa=gc.querySelector('#t-pes'), campoSes=gc.querySelector('#t-ses');
+    function desenhaPes(){
+      const n=Math.max(1,Math.min(24,Number(campoSes.value)||1));
+      const marcados=new Set(
+        caixa.children.length
+          ? Array.from(caixa.querySelectorAll('input:checked')).map(i=>Number(i.value))
+          : pesDe(t)
+      );
+      let out='';
+      for(let i=0;i<n;i++){
+        out+='<label style="padding:9px 12px"><input type="checkbox" value="'+i+'"'+(marcados.has(i)?' checked':'')
+          + ' style="width:18px;height:18px;margin-top:1px"><span><b>'+ord(i+1)+' atendimento</b>'
+          + '<small>'+(i===0?'primeira semana do ciclo':'semana '+(i+1))+'</small></span></label>';
+      }
+      caixa.innerHTML=out;
+    }
+    campoSes.addEventListener('input',desenhaPes);
+    desenhaPes();
+  }
+  async function salvarTipo(id){
+    const nome=gc.querySelector('#t-nome').value.trim();
+    if(!nome){ nota('Dê um nome ao pacote.'); return; }
+    const doc={
+      nome:nome,
+      sessoes:Math.max(1,Math.min(24,Number(gc.querySelector('#t-ses').value)||1)),
+      valor:Number(gc.querySelector('#t-valor').value)||0,
+      pes:Array.from(gc.querySelectorAll('#t-pes input:checked')).map(i=>Number(i.value)).sort((a,b)=>a-b),
+      ordem:id? (tipo(id).ordem||0) : (st.pacotes.length? Math.max.apply(null,st.pacotes.map(p=>Number(p.ordem)||0))+1 : 1)
+    };
+    if(id) doc.id=id;
+    if(!st.db){ semDados(); return; }
+    try{
+      if(id){
+        await st.db.doc('pacotes/'+id).set(Object.assign({id:id},doc));
+        for(const c of st.ciclos.filter(k=>k.pacote===id && !k.pago && !infoCiclo(k).completo))
+          await st.db.doc('ciclos/'+c.id).update({valor:doc.valor});
+      }else{
+        const novoId='p'+Date.now().toString(36);
+        await st.db.doc('pacotes/'+novoId).set(Object.assign({id:novoId},doc));
+      }
+      fecha(); nota(id?'Tipo atualizado.':'Tipo criado.');
+    }catch(e){ erro(e); }
   }
 
   /* ---- gaveta: cancelamento ---- */
@@ -1352,6 +1461,18 @@
     if(act==='limparEx'){ dobra(t,'Confirmar?',limparEx); return; }
     if(act==='backup'){ exportaBackup(); return; }
     if(act==='planilha'){ exportaPlanilha(); return; }
+    if(act==='novoTipo'){ gTipo(null); return; }
+    if(act==='editTipo'){ const tp=tipo(t.dataset.id); if(tp && !tp.sumiu) gTipo(tp); return; }
+    if(act==='salvarTipo'){ await salvarTipo(t.dataset.id||''); return; }
+    if(act==='apagarTipo'){
+      const id=t.dataset.id;
+      const usos=st.clientes.filter(x=>x.pacote===id).length;
+      dobra(t, usos? 'Apagar mesmo com '+usos+' cliente'+(usos>1?'s':'')+'?' : 'Confirmar?', async()=>{
+        const ok=await grava(db=>db.doc('pacotes/'+id).delete());
+        if(ok){ fecha(); nota('Tipo apagado. As clientes ficam sem formato até você escolher outro.'); }
+      });
+      return;
+    }
 
     if(act==='pago'){
       const a=st.atend.find(x=>x.id===t.dataset.id); if(!a) return;
@@ -1394,13 +1515,12 @@
       return;
     }
     if(act==='salvarCfg'){
-      const novo={
+      const novo=Object.assign({},st.cfg,{
         precoMao:Number(document.getElementById('cfg-precoMao').value)||0,
         precoPeMao:Number(document.getElementById('cfg-precoPeMao').value)||0,
-        precoPkg15:Number(document.getElementById('cfg-precoPkg15').value)||0,
-        precoPkg30:Number(document.getElementById('cfg-precoPkg30').value)||0,
-        pix:document.getElementById('cfg-pix').value.trim()
-      };
+        pix:document.getElementById('cfg-pix').value.trim(),
+        pacotesIniciados:true
+      });
       const ok=await grava(db=>db.doc('config/geral').set(novo));
       if(ok) nota('Valores salvos.');
       return;
@@ -1418,7 +1538,7 @@
      Nada sai do celular dela. ============================================ */
   const CHAVE='caderninho.debora.v1';
   function criaBanco(){
-    const vazio={clientes:{},atendimentos:{},ciclos:{},config:{}};
+    const vazio={clientes:{},atendimentos:{},ciclos:{},pacotes:{},config:{}};
     let dados=vazio;
     try{
       const bruto=localStorage.getItem(CHAVE);
@@ -1500,7 +1620,7 @@
       const s=SERV[a.serv]||SERV.mao, k=a.cicloId?ciclo(a.cicloId):null;
       linhas.push([
         a.data, WD[parse(a.data).getDay()], a.hora, a.clientName, s.label, s.min,
-        k? PKG[k.pacote].curto : 'Pontual', k? k.num : '',
+        k? nomePkg(k.pacote) : 'Pontual', k? k.num : '',
         k? '' : (Number(a.valor)||0),
         ehFalta(a)? 'Falta cobrada' : (k? (k.pago?'Pago no pacote':'No pacote') : (a.pago?'Pago':'Em aberto')),
         a.obs||''
@@ -1511,7 +1631,7 @@
     linhas.push(['Cliente','Pacote nº','Formato','Início','Fim','Feitos','Total','Valor','Situação']);
     st.ciclos.forEach(c=>{
       const i=infoCiclo(c);
-      linhas.push([c.clientName,c.num,PKG[c.pacote]?PKG[c.pacote].curto:'',i.inicio,i.fim,i.feitas,i.total,Number(c.valor)||0,
+      linhas.push([c.clientName,c.num,nomePkg(c.pacote),i.inicio,i.fim,i.feitas,i.total,Number(c.valor)||0,
         c.pago?'Pago':(i.completo?'Fechado, a receber':'Em andamento')]);
     });
     baixa('caderninho-'+hoje()+'.csv',csv(linhas),'text/csv');
@@ -1539,6 +1659,17 @@
     try{ db=criaBanco(); }catch(e){ db=null; }
     if(!db){ st.pronto=true; render(); nota('Este navegador bloqueou o armazenamento. Saia da aba anônima.'); return; }
     st.db=db;
+
+    /* primeira abertura: deixa os dois tipos de pacote prontos para ela editar */
+    const bruto=db.tudo();
+    const jaTem=bruto.pacotes && Object.keys(bruto.pacotes).length;
+    const cfg0=(bruto.config && bruto.config.geral) || null;
+    if(!jaTem && !(cfg0 && cfg0.pacotesIniciados)){
+      PKG_INICIAIS.forEach(p=>db.doc('pacotes/'+p.id).set(p));
+      db.doc('config/geral').set(Object.assign({},PADRAO,cfg0||{},{pacotesIniciados:true}));
+    }
+
+    db.collection('pacotes').onSnapshot(s=>{ st.pacotes=s.docs.map(d=>Object.assign({id:d.id},d.data())); render(); });
     db.collection('clientes').onSnapshot(s=>{ st.clientes=s.docs.map(d=>Object.assign({id:d.id},d.data())); st.pronto=true; render(); });
     db.collection('atendimentos').onSnapshot(s=>{ st.atend=s.docs.map(d=>Object.assign({id:d.id},d.data())); st.pronto=true; render(); });
     db.collection('ciclos').onSnapshot(s=>{ st.ciclos=s.docs.map(d=>Object.assign({id:d.id},d.data())); st.pronto=true; render(); });
